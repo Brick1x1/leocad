@@ -1125,22 +1125,66 @@ void Project::ExportBrickLink()
 		return;
 	}
 
+	// Load translation file
+	QString FileNameTranslation = "bricklink_translate.inf";
+    lcDiskFile TranslateFile(FileNameTranslation);
+	bool isTranslationUsed = false;
+
+	std::map<QString, QString> mapBrickLinkTranslate;
+	std::map<QString, QString>::iterator it;
+
+    if (TranslateFile.Open(QIODevice::ReadOnly))
+    {
+        QMessageBox::information(gMainWindow, tr("Information"), tr("Translation file '%1', is used").arg(FileNameTranslation));
+        isTranslationUsed = true;
+    }
+
+	// If translation file found, load content to map
+	if(isTranslationUsed==true)
+	{
+		char SrcPartNo[LC_PIECE_NAME_LEN], DstPartNo[LC_PIECE_NAME_LEN];
+
+	    while (TranslateFile.ReadLine(Line, sizeof(Line)))
+	    {
+	        if (sscanf(Line,"%s %s", SrcPartNo, DstPartNo) == 2)
+	        {
+	            if (!mapBrickLinkTranslate.insert(std::make_pair(SrcPartNo, DstPartNo)).second)
+					QMessageBox::warning(gMainWindow, tr("Translation dublicate!"), tr("Part no: '%1, found more than once in translation file!").arg(SrcPartNo));
+	        }
+	    }
+
+		TranslateFile.Close();
+	}
+
 	BrickLinkFile.WriteLine("<INVENTORY>\n");
 
 	for (const auto& PartIt : PartsList)
 	{
 		const PieceInfo* Info = PartIt.first;
 
+		// Get part number from partlist
+		char FileName[LC_PIECE_NAME_LEN];
+		strcpy(FileName, Info->mFileName);
+		char* Ext = strchr(FileName, '.');
+		if (Ext)
+			*Ext = 0;
+
+		//Translate part no (=FileName), if translation is in use and translation found
+		if(isTranslationUsed==true)
+		{
+			it = mapBrickLinkTranslate.find(FileName);
+			if(it != mapBrickLinkTranslate.end())
+			{
+					strcpy(FileName,it->second.toLocal8Bit().constData());
+					//QMessageBox::information(gMainWindow, tr("Translate part number id"), tr("Translate part no id: '%1, to: %2'").arg(it->first, FileName));
+			}
+		}
+
+
 		for (const auto& ColorIt : PartIt.second)
 		{
 			BrickLinkFile.WriteLine("  <ITEM>\n");
 			BrickLinkFile.WriteLine("    <ITEMTYPE>P</ITEMTYPE>\n");
-
-			char FileName[LC_PIECE_NAME_LEN];
-			strcpy(FileName, Info->mFileName);
-			char* Ext = strchr(FileName, '.');
-			if (Ext)
-				*Ext = 0;
 
 			sprintf(Line, "    <ITEMID>%s</ITEMID>\n", FileName);
 			BrickLinkFile.WriteLine(Line);
@@ -1160,6 +1204,7 @@ void Project::ExportBrickLink()
 	}
 
 	BrickLinkFile.WriteLine("</INVENTORY>\n");
+	BrickLinkFile.Close();
 }
 
 void Project::ExportCOLLADA(const QString& FileName)
